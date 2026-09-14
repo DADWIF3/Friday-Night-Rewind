@@ -4,6 +4,8 @@
 // at POST /api/submit. Everything else falls through to static assets so the
 // SPA router keeps working.
 
+import { handleAdmin } from './admin.js';
+
 const TYPES = new Set(['preview', 'nomination', 'contact']);
 
 // Fields we accept, per form type. Anything not listed is dropped rather than
@@ -175,6 +177,11 @@ export default {
     if (url.pathname === '/api/submit') {
       if (request.method !== 'POST') return json({ error: 'Method not allowed.' }, 405);
       return handleSubmit(request, env, ctx);
+    }
+
+    if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
+      if (!env.DB) return new Response('Storage is not configured.', { status: 503 });
+      return handleAdmin(request, env, url);
     }
 
     if (url.pathname === '/api/health') {
