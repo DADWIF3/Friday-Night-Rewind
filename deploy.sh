@@ -54,16 +54,27 @@ w d1 execute "$DB_NAME" --remote --file=./schema.sql
 
 echo
 echo "==> Secrets"
-echo "    ADMIN_PASSWORD protects /admin. Without it /admin returns 503."
-echo "    Choose something long. It is typed directly into wrangler, never stored in this repo."
-w secret put ADMIN_PASSWORD
-
-echo
-read -r -p "    Set RESEND_API_KEY now for lead-notification email? [y/N] " reply
-if [[ "$reply" =~ ^[Yy]$ ]]; then
-  w secret put RESEND_API_KEY
+# `wrangler secret put` reads the value from an interactive prompt. When an
+# agent runs this script non-interactively there is no safe way to supply it,
+# so SKIP_SECRETS=1 defers both to the Cloudflare dashboard instead.
+if [[ "${SKIP_SECRETS:-0}" == "1" ]]; then
+  echo "    Skipping (SKIP_SECRETS=1). Set these in the Cloudflare dashboard:"
+  echo "      Workers & Pages -> $(grep -o '\"name\": \"[^\"]*' wrangler.jsonc | head -1 | cut -d'\"' -f4)"
+  echo "      -> Settings -> Variables and Secrets -> Add -> Encrypt"
+  echo "      ADMIN_PASSWORD  (required; /admin returns 503 without it)"
+  echo "      RESEND_API_KEY  (optional; lead-notification email)"
 else
-  echo "    Skipped. Submissions will still be stored; you just won't get an email."
+  echo "    ADMIN_PASSWORD protects /admin. Without it /admin returns 503."
+  echo "    Choose something long. It is typed directly into wrangler, never stored in this repo."
+  w secret put ADMIN_PASSWORD
+
+  echo
+  read -r -p "    Set RESEND_API_KEY now for lead-notification email? [y/N] " reply
+  if [[ "$reply" =~ ^[Yy]$ ]]; then
+    w secret put RESEND_API_KEY
+  else
+    echo "    Skipped. Submissions will still be stored; you just won't get an email."
+  fi
 fi
 
 echo
