@@ -1,9 +1,25 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "friday-night-rewind-preview",
-  "compatibility_date": "2026-09-14",
+  "main": "./worker/index.js",
+  "compatibility_date": "2026-07-01",
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
     "not_found_handling": "single-page-application"
-  }
+  },
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "NOTIFY_TO": "Fridaynightrewind06@gmail.com"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "friday-night-rewind",
+      // Replaced with the real id by `wrangler d1 create friday-night-rewind`.
+      "database_id": "PLACEHOLDER_RUN_WRANGLER_D1_CREATE"
+    }
+  ]
 }
