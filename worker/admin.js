@@ -99,6 +99,7 @@ function flag(on, label) {
 }
 
 function row(r) {
+  // r.files is attached by listPage.
   const pair = (label, value) => (value ? `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>` : '');
   const when = new Date(r.created_at).toLocaleString('en-US', { timeZone: 'America/New_York' });
 
@@ -115,6 +116,7 @@ ${pair('Format', r.format)}${pair('Length', r.length)}${pair('Wants', r.service_
 ${r.media_link ? `<dt>Link</dt><dd><a href="${esc(r.media_link)}" rel="noopener noreferrer nofollow" target="_blank">${esc(r.media_link)}</a></dd>` : ''}
 </dl>
 ${r.message ? `<div class="msg">${esc(r.message)}</div>` : ''}
+${fileList(r.files || [])}
 <div class="consent">
 ${flag(r.rights_confirmed, 'owns/has rights')}
 ${flag(r.contact_ok, 'contact ok')}
@@ -129,6 +131,13 @@ ${STATUSES.map((s) => `<option value="${s}"${s === r.status ? ' selected' : ''}>
 </select>
 <button type="submit">Save</button>
 </form></article>`;
+}
+
+function fileList(files) {
+  if (!files.length) return '';
+  return `<dl><dt>Files</dt><dd>${files.map((f) =>
+    `${esc(f.filename)} <span class="meta">(${(f.size_bytes / 1048576).toFixed(0)} MB, ${esc(f.status)}, expires ${esc(String(f.expires_at).slice(0, 10))})</span>`
+  ).join('<br>')}</dd></dl>`;
 }
 
 async function listPage(env, url) {
@@ -150,6 +159,17 @@ async function listPage(env, url) {
   sql += ' ORDER BY created_at DESC LIMIT 200';
 
   const { results } = await env.DB.prepare(sql).bind(...binds).all();
+
+  // Attach uploaded footage to each submission in one extra query.
+  if (results.length) {
+    const ids = results.map((r) => r.id);
+    const { results: files } = await env.DB.prepare(
+      `SELECT submission_id, filename, size_bytes, status, expires_at FROM uploads
+       WHERE submission_id IN (${ids.map(() => '?').join(',')}) AND status != 'aborted'
+       ORDER BY created_at`
+    ).bind(...ids).all();
+    for (const r of results) r.files = files.filter((f) => f.submission_id === r.id);
+  }
 
   const tab = (label, params, active) =>
     `<a class="${active ? 'on' : ''}" href="/admin${params}">${label}</a>`;

@@ -43,7 +43,10 @@ CREATE TABLE IF NOT EXISTS submissions (
   source_page       TEXT,
   user_agent        TEXT,
   created_at        TEXT NOT NULL,
-  notes             TEXT
+  notes             TEXT,
+
+  -- Authorizes attaching footage to this submission (see uploads, below).
+  upload_token      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_submissions_created ON submissions (created_at DESC);
@@ -56,3 +59,29 @@ CREATE TABLE IF NOT EXISTS rate_limit (
   count     INTEGER NOT NULL,
   window_at TEXT NOT NULL
 );
+
+-- ---------------------------------------------------------------------------
+-- Phase 2: customer footage uploads (R2)
+-- ---------------------------------------------------------------------------
+
+-- `submissions.upload_token` ties an upload session to the submission that
+-- created it, so only the person who just filled the form can attach files.
+
+CREATE TABLE IF NOT EXISTS uploads (
+  id             TEXT PRIMARY KEY,
+  submission_id  TEXT NOT NULL REFERENCES submissions(id),
+  key            TEXT NOT NULL UNIQUE,   -- object key in R2
+  filename       TEXT NOT NULL,
+  content_type   TEXT,
+  size_bytes     INTEGER,
+  status         TEXT NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending','complete','aborted','deleted')),
+  created_at     TEXT NOT NULL,
+  completed_at   TEXT,
+  -- Customer footage is deleted on this date unless the project says otherwise.
+  -- The FAQ promises we are not a permanent storage provider; this enforces it.
+  expires_at     TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_uploads_submission ON uploads (submission_id);
+CREATE INDEX IF NOT EXISTS idx_uploads_expiry     ON uploads (expires_at) WHERE status = 'complete';

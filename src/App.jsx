@@ -31,22 +31,78 @@ function Services(){return <><PageHero eyebrow="Services" title="From fragile ta
 function How(){return <><PageHero eyebrow="How it works" title="A simple process for irreplaceable footage.">We review first, communicate clearly, and treat original media with care.</PageHero><section><div className="wrap"><Steps/><div className="two-col prose"><div><h2>Real-time transfer</h2><p>VHS and similar tape transfer happens in real time. A two-hour tape takes approximately two hours just to capture before inspection, restoration, editing, and export begin.</p></div><div><h2>Source-led results</h2><p>Color, clarity, audio, and stability may be improved when the recording contains usable information. Tape damage, blur, poor lighting, and missing detail can limit the result.</p></div></div></div></section><LeadCTA/></>}
 function Field({label,name,type='text',required=false,children,placeholder}){return <label><span>{label}{required&&' *'}</span>{children||<input name={name} type={type} required={required} placeholder={placeholder}/>}</label>}
 function Check({name,required=false,children}){return <label className="check"><input type="checkbox" name={name} required={required}/><span>{children}{required&&' *'}</span></label>}
+
+const ACCEPT='video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm,video/mpeg,video/x-ms-wmv,video/3gpp,image/jpeg,image/png,image/heic';
+const MB=1024*1024;
+function humanSize(b){return b>=1024*MB?`${(b/1024/MB).toFixed(1)} GB`:`${Math.max(1,Math.round(b/MB))} MB`}
+
+// Uploads one file to R2 in parts. A tape capture is far larger than a single
+// request can carry, so the browser slices it and sends the pieces in order.
+async function uploadFile(file,submissionId,token,onProgress){
+ const q=`submission_id=${encodeURIComponent(submissionId)}&token=${encodeURIComponent(token)}`;
+ const started=await fetch('/api/upload/create',{method:'POST',headers:{'content-type':'application/json'},
+  body:JSON.stringify({submission_id:submissionId,token,filename:file.name,size:file.size,content_type:file.type})});
+ const info=await started.json().catch(()=>({}));
+ if(!started.ok)throw new Error(info.error||'Upload could not start.');
+ const size=info.part_size,parts=[];
+ for(let i=0;i*size<file.size;i++){
+  const chunk=file.slice(i*size,Math.min((i+1)*size,file.size));
+  const res=await fetch(`/api/upload/part?${q}&key=${encodeURIComponent(info.key)}&upload_id=${encodeURIComponent(info.upload_id)}&part=${i+1}`,{method:'PUT',body:chunk});
+  const out=await res.json().catch(()=>({}));
+  if(!res.ok)throw new Error(out.error||'A piece of the upload failed.');
+  parts.push({part:out.part,etag:out.etag});
+  onProgress(Math.min(99,Math.round(((i+1)*size/file.size)*100)));
+ }
+ const done=await fetch('/api/upload/complete',{method:'POST',headers:{'content-type':'application/json'},
+  body:JSON.stringify({submission_id:submissionId,token,key:info.key,upload_id:info.upload_id,parts})});
+ const out=await done.json().catch(()=>({}));
+ if(!done.ok)throw new Error(out.error||'The upload could not be finished.');
+ onProgress(100);
+}
+
+function Uploader({submissionId,token}){
+ const [items,setItems]=useState([]);const [busy,setBusy]=useState(false);
+ async function pick(e){
+  const files=[...e.target.files];e.target.value='';if(!files.length)return;
+  const base=items.length;
+  setItems(cur=>[...cur,...files.map(f=>({name:f.name,size:f.size,pct:0,error:''}))]);
+  setBusy(true);
+  for(let i=0;i<files.length;i++){
+   const at=base+i;
+   try{await uploadFile(files[i],submissionId,token,pct=>setItems(cur=>cur.map((it,n)=>n===at?{...it,pct}:it)))}
+   catch(err){setItems(cur=>cur.map((it,n)=>n===at?{...it,error:err.message}:it))}
+  }
+  setBusy(false);
+ }
+ return <div className="uploader">
+  <h3>Add your footage (optional)</h3>
+  <p className="micro">Video or photos, up to 5 GB each. Keep this page open until each file reaches 100%. Your original tape should stay with you until we confirm transfer details.</p>
+  <label className="button secondary file-pick">{busy?'Uploading…':'Choose files'}
+   <input type="file" accept={ACCEPT} multiple onChange={pick} disabled={busy} hidden/></label>
+  {items.length>0&&<ul className="upload-list">{items.map((it,n)=><li key={n}>
+   <span className="upload-name">{it.name} <small>{humanSize(it.size)}</small></span>
+   {it.error?<span className="upload-err">{it.error}</span>
+    :<><progress value={it.pct} max="100"/><span className="upload-pct">{it.pct}%</span></>}
+  </li>)}</ul>}
+ </div>;
+}
+
 const FORM_TYPES={'preview-request':'preview','legend-nomination':'nomination','contact':'contact'};
 const FIELD_MAP={nominator:'name','file-link':'media_link',link:'media_link',story:'message',description:'message','contact-method':'contact_method',service:'service_wanted',permission:'rights_confirmed',rights:'rights_confirmed','public-use':'public_use_ok','portfolio-use':'portfolio_use_ok'};
 const CHECKS={contact:'contact_ok'};
-function Form({name,children,button,success}){const [sent,setSent]=useState(false);const [busy,setBusy]=useState(false);const [error,setError]=useState('');
+function Form({name,children,button,success,uploads=false}){const [sent,setSent]=useState(false);const [busy,setBusy]=useState(false);const [error,setError]=useState('');const [ticket,setTicket]=useState(null);
  async function submit(e){e.preventDefault();const el=e.currentTarget;if(!el.reportValidity())return;setBusy(true);setError('');
   const data={type:FORM_TYPES[name],source_page:window.location.pathname};
   for(const [k,v] of new FormData(el).entries()){if(k==='form-name')continue;const key=(el.elements[k]&&el.elements[k].type==='checkbox'&&CHECKS[k])||FIELD_MAP[k]||k;data[key]=v}
   try{const res=await fetch('/api/submit',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(data)});const out=await res.json().catch(()=>({}));
-   if(!res.ok)throw new Error(out.error||'We could not send that. Please try again.');setSent(true)}
+   if(!res.ok)throw new Error(out.error||'We could not send that. Please try again.');setTicket(out);setSent(true)}
   catch(err){setError(err.message||'We could not send that. Please check your connection and try again.')}
   finally{setBusy(false)}}
- if(sent)return <div className="success" role="status" tabIndex="-1"><h2>Submission received.</h2><p>{success}</p></div>;
+ if(sent)return <div className="success" role="status" tabIndex="-1"><h2>Submission received.</h2><p>{success}</p>{uploads&&ticket&&ticket.upload_token&&<Uploader submissionId={ticket.id} token={ticket.upload_token}/>}</div>;
  return <form name={name} onSubmit={submit} noValidate={false}><input type="hidden" name="form-name" value={name}/><div className="hp" aria-hidden="true"><label>Website<input type="text" name="website" tabIndex="-1" autoComplete="off"/></label></div>{children}{error&&<p className="form-error" role="alert">{error}</p>}<button className="button" type="submit" disabled={busy}>{busy?'Sending…':button}</button><p className="form-note">* Required fields. We use your details only to respond to this request.</p></form>}
 const Select=({name,options,required=true})=><select name={name} required={required}><option value="">Select one</option>{options.map(x=><option key={x}>{x}</option>)}</select>;
 function Legends(){return <><PageHero eyebrow="Local Legend of the Week" title="Every town has a legend. Help us tell their story.">A community spotlight for overlooked former athletes, coaches, teams, and sports moments—especially stories from 20 or more years ago that never had the benefit of modern video.</PageHero><section><div className="wrap form-layout"><aside><h2>Who we’re looking for</h2><ul className="ticks"><li>High-school, small-college, amateur, and hometown standouts</li><li>Footage or stories from at least 20 years ago</li><li>People whose accomplishments deserve rediscovery</li><li>Permission-based stories handled with respect</li></ul><p>This weekly editorial feature is not focused on recent athletes or already-famous NFL stars. Paid restoration services remain available for footage from any era.</p></aside><Form name="legend-nomination" button="Submit Nomination" success="Thank you for helping preserve local sports history. We’ll review the nomination and contact you if we need more information."><div className="form-grid"><Field label="Nominator name" name="nominator" required/><Field label="Email" name="email" type="email" required/><Field label="Phone number" name="phone" type="tel"/><Field label="Athlete/nominee name" name="nominee" required/><Field label="School" name="school"/><Field label="City" name="city" required/><Field label="Sport" name="sport" required/><Field label="Position or role" name="position"/><Field label="Graduation year or relevant season" name="year" required/><Field label="Link to footage/photos, if available" name="link" type="url"/></div><Field label="Why should this person be featured?" name="story" required><textarea name="story" rows="6" required/></Field><Check name="permission" required>I have permission to submit this material.</Check><Check name="contact" required>I authorize Friday Night Rewind to contact me about this nomination.</Check><Check name="public-use">If selected, I authorize Friday Night Rewind to use submitted materials on its website, social media, and promotional channels. This permission is optional and separate.</Check></Form></div></section></>}
-function Preview(){return <><PageHero eyebrow="Free preview & quote" title="Get Your Free 15-Second Restoration Preview">Show us what you have. For eligible projects, we’ll prepare a short sample so you can evaluate likely results before selecting a package.</PageHero><section><div className="wrap narrow"><Form name="preview-request" button="Request My Free Preview" success="Thanks—your sports memories matter. We’ll review your submission and contact you about the next step. Please keep your original tape safe until we confirm transfer details."><div className="form-grid"><Field label="Full name" name="name" required/><Field label="Email" name="email" type="email" required/><Field label="Phone" name="phone" type="tel" required/><Field label="City" name="city" required/><Field label="School/team name" name="team"/><Field label="Sport" name="sport" required/><Field label="Approximate year or season" name="year"/><Field label="Tape or file format" name="format" required><Select name="format" options={['VHS','VHS-C','MiniDV','DVD','Digital file','Phone recording','Other']}/></Field><Field label="Approximate footage length" name="length"/><Field label="What do you want?" name="service" required><Select name="service" options={['Digitization','Restoration','Social highlight','Legacy reel','Team film','Unsure']}/></Field><Field label="Upload/file link (placeholder)" name="file-link" type="url" placeholder="https://"/><Field label="Preferred contact method" name="contact-method" required><Select name="contact-method" options={['Email','Phone call','Text message']}/></Field></div><Field label="Describe what is on the tape" name="description" required><textarea name="description" rows="6" required/></Field><Check name="rights" required>I own this footage or have permission to submit it.</Check><Check name="portfolio-use">I grant optional permission to use a short clip as a portfolio or social-media before-and-after example.</Check></Form></div></section></>}
+function Preview(){return <><PageHero eyebrow="Free preview & quote" title="Get Your Free 15-Second Restoration Preview">Show us what you have. For eligible projects, we’ll prepare a short sample so you can evaluate likely results before selecting a package.</PageHero><section><div className="wrap narrow"><Form name="preview-request" uploads button="Request My Free Preview" success="Thanks—your sports memories matter. We’ll review your submission and contact you about the next step. Please keep your original tape safe until we confirm transfer details."><div className="form-grid"><Field label="Full name" name="name" required/><Field label="Email" name="email" type="email" required/><Field label="Phone" name="phone" type="tel" required/><Field label="City" name="city" required/><Field label="School/team name" name="team"/><Field label="Sport" name="sport" required/><Field label="Approximate year or season" name="year"/><Field label="Tape or file format" name="format" required><Select name="format" options={['VHS','VHS-C','MiniDV','DVD','Digital file','Phone recording','Other']}/></Field><Field label="Approximate footage length" name="length"/><Field label="What do you want?" name="service" required><Select name="service" options={['Digitization','Restoration','Social highlight','Legacy reel','Team film','Unsure']}/></Field><Field label="Upload/file link (placeholder)" name="file-link" type="url" placeholder="https://"/><Field label="Preferred contact method" name="contact-method" required><Select name="contact-method" options={['Email','Phone call','Text message']}/></Field></div><Field label="Describe what is on the tape" name="description" required><textarea name="description" rows="6" required/></Field><Check name="rights" required>I own this footage or have permission to submit it.</Check><Check name="portfolio-use">I grant optional permission to use a short clip as a portfolio or social-media before-and-after example.</Check></Form></div></section></>}
 function About(){return <><PageHero eyebrow="About us" title="Hometown sports history should not disappear in a closet.">We are building a Central Florida service dedicated to preserving the games, people, and moments recorded on aging media.</PageHero><section><div className="wrap two-col prose"><div><h2>Why we’re here</h2><p>Old tapes can become harder to play, easier to damage, and simpler to forget. We want to help families, former athletes, coaches, schools, alumni groups, and hometown communities preserve those recordings while they still can.</p><p>Our work begins with respect: for the person on the field, the family holding the tape, the people appearing in the footage, and the limitations of the original recording.</p></div><div><h2>What we believe</h2><p>Hardworking athletes did not become less important because their best moments happened before smartphones and HD cameras. Our team digitizes aging sports footage, improves watchability where possible, and builds modern edits that make those memories easier to revisit and share.</p><p>We communicate honestly. We do not promise perfect results or claim technology can recreate detail that was never recorded.</p></div></div></section><LeadCTA/></>}
 function FAQ(){return <><PageHero eyebrow="FAQ" title="Honest answers before you hand over a memory.">Every tape and every project is different. These answers explain our intended process and limits.</PageHero><section><div className="wrap narrow"><FAQList/></div></section></>}
 function Contact(){return <><PageHero eyebrow="Contact" title="Tell us what you found.">{site.serviceArea}</PageHero><section><div className="wrap form-layout"><aside><h2>Contact details</h2><p><strong>Email</strong><br/><a href={`mailto:${site.email}`}>{site.email}</a></p><p><strong>Phone</strong><br/><a href={`tel:${site.phone.replace(/\D/g,'')}`}>{site.phone}</a></p><p><strong>Hours</strong><br/>{site.hours}</p><h3>Follow</h3><div className="socials">{Object.entries(site.socials).map(([n,u])=><a href={u} key={n}>{n}</a>)}</div><p className="micro">All contact information and links are launch placeholders.</p></aside><Form name="contact" button="Send Message" success="Thanks for reaching out. We’ll review your message and respond using the contact information you provided."><Field label="Full name" name="name" required/><Field label="Email" name="email" type="email" required/><Field label="Phone" name="phone" type="tel"/><Field label="How can we help?" name="message" required><textarea name="message" rows="7" required/></Field></Form></div></section></>}

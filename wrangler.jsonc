@@ -14,6 +14,16 @@
   "vars": {
     "NOTIFY_TO": "Fridaynightrewind06@gmail.com"
   },
+  "r2_buckets": [
+    {
+      "binding": "UPLOADS",
+      "bucket_name": "friday-night-rewind-uploads"
+    }
+  ],
+  "triggers": {
+    // Nightly retention sweep: deletes customer footage past its expiry.
+    "crons": ["0 7 * * *"]
+  },
   "d1_databases": [
     {
       "binding": "DB",

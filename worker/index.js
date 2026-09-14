@@ -5,6 +5,7 @@
 // SPA router keeps working.
 
 import { handleAdmin } from './admin.js';
+import { handleUpload, sweepExpired } from './uploads.js';
 
 const TYPES = new Set(['preview', 'nomination', 'contact']);
 
@@ -78,8 +79,9 @@ async function notify(env, record) {
     contact: 'Contact message',
   }[record.type];
 
+  // upload_token authorizes writes to the bucket — it never belongs in an email.
   const lines = Object.entries(record)
-    .filter(([, v]) => v !== '' && v !== null && v !== undefined)
+    .filter(([k, v]) => k !== 'upload_token' && v !== '' && v !== null && v !== undefined)
     .map(([k, v]) => `${k}: ${v}`)
     .join('\n');
 
@@ -144,12 +146,16 @@ async function handleSubmit(request, env, ctx) {
   }
 
   const now = new Date().toISOString();
+  // Only footage-bearing requests get an upload token; a contact message
+  // has no reason to be able to write to the bucket.
+  const uploadToken = type === 'contact' ? null : crypto.randomUUID().replace(/-/g, '');
   const row = {
     id: crypto.randomUUID(),
     ...record,
     ...consent,
     consent_at: now,
     consent_ip: ip,
+    upload_token: uploadToken,
     source_page: clean(body.source_page),
     user_agent: (request.headers.get('user-agent') || '').slice(0, 500),
     created_at: now,
@@ -167,7 +173,7 @@ async function handleSubmit(request, env, ctx) {
   }
 
   ctx.waitUntil(notify(env, row));
-  return json({ ok: true, id: row.id });
+  return json({ ok: true, id: row.id, upload_token: uploadToken });
 }
 
 export default {
@@ -184,10 +190,23 @@ export default {
       return handleAdmin(request, env, url);
     }
 
+    if (url.pathname.startsWith('/api/upload/')) {
+      return handleUpload(request, env, url);
+    }
+
     if (url.pathname === '/api/health') {
-      return json({ ok: true, db: Boolean(env.DB), email: Boolean(env.RESEND_API_KEY) });
+      return json({
+        ok: true,
+        db: Boolean(env.DB),
+        email: Boolean(env.RESEND_API_KEY),
+        uploads: Boolean(env.UPLOADS),
+      });
     }
 
     return env.ASSETS.fetch(request);
+  },
+
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(sweepExpired(env));
   },
 };
