@@ -11,6 +11,9 @@
   "observability": {
     "enabled": true
   },
+  // Silence the build warnings: be explicit rather than relying on defaults.
+  "workers_dev": true,
+  "preview_urls": false,
   "vars": {
     "NOTIFY_TO": "Fridaynightrewind06@gmail.com"
   },
