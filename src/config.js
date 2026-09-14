@@ -4,7 +4,7 @@ export const site = {
   email: 'Fridaynightrewind06@gmail.com',
   phone: '(407) 555-0147',
   hours: 'Business hours coming soon',
-  domain: 'https://www.example.com',
+  domain: 'https://friday-night-rewind.jarrodfleming03.workers.dev',
   serviceArea: 'Central Florida — Orlando, Apopka, Ocoee, Winter Garden, Kissimmee, Sanford, and surrounding communities',
   socials: { Instagram:'#', Facebook:'#', TikTok:'#', YouTube:'#', 'YouTube Shorts':'#' },
   nav: [['Services','/services'],['How It Works','/how-it-works'],['Local Legends','/local-legends'],['About','/about'],['FAQ','/faq']],
