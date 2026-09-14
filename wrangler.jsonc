@@ -17,7 +17,7 @@
   "r2_buckets": [
     {
       "binding": "UPLOADS",
-      "bucket_name": "friday-night-rewind-uploads"
+      "bucket_name": "friday-night-rewind"
     }
   ],
   "triggers": {
