@@ -29,7 +29,7 @@
       "binding": "DB",
       "database_name": "friday-night-rewind",
       // Replaced with the real id by `wrangler d1 create friday-night-rewind`.
-      "database_id": "PLACEHOLDER_RUN_WRANGLER_D1_CREATE"
+      "database_id": "7271755b-06b2-4dd6-90a6-3b38a5a3cd98"
     }
   ]
 }
