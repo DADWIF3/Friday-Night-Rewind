@@ -11,7 +11,9 @@
 # ever echoes it in an error.
 set -u
 
-DIAG="dist/_build-status.txt"
+# Status file stays out of dist so it is not published; the sync outcome
+# shows in the build log.
+DIAG="/tmp/fnr-build-status.txt"
 : > "$DIAG"
 log() { echo "$1"; echo "$1" >> "$DIAG"; }
 
