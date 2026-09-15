@@ -1,29 +1,42 @@
 #!/usr/bin/env bash
 # Promote build-time secrets into Worker runtime secrets.
 #
-# Cloudflare's dashboard has two separate "Variables and secrets" panels:
-# one under Builds (available only while the build container runs) and one
-# under Runtime (what the deployed Worker actually reads). A value set in the
-# first is invisible to the second. This bridges them, so the Builds entry is
-# the single place a secret has to be set.
+# Cloudflare has two separate "Variables and secrets" panels: one under Builds
+# (visible only while the build container runs) and one under Runtime (what the
+# deployed Worker reads). A value set in the first is invisible to the second.
+# This bridges them so the Builds entry is the only place a secret is set.
 #
-# The value is piped straight into wrangler and never printed.
+# Secret values are piped straight into wrangler and never printed. The status
+# file records outcomes only, and scrubs the value defensively in case wrangler
+# ever echoes it in an error.
 set -u
+
+DIAG="dist/_build-status.txt"
+: > "$DIAG"
+log() { echo "$1"; echo "$1" >> "$DIAG"; }
+
+scrub() {
+  local out="$1" value="$2"
+  [ -n "$value" ] && out="${out//$value/<redacted>}"
+  # Keep it short and single-line.
+  printf '%s' "$out" | tr '\n' ' ' | cut -c1-300
+}
 
 sync() {
   local name="$1" value="${2:-}"
   if [ -z "$value" ]; then
-    echo "  $name: not set as a build secret; skipping"
+    log "$name: absent from build env"
     return 0
   fi
-  if printf '%s' "$value" | npx wrangler secret put "$name" >/dev/null 2>&1; then
-    echo "  $name: synced to runtime"
+  local out rc
+  out="$(printf '%s' "$value" | npx wrangler secret put "$name" 2>&1)"; rc=$?
+  if [ $rc -eq 0 ]; then
+    log "$name: synced ok"
   else
-    # Non-fatal: a failure here must not break an otherwise good deploy.
-    echo "  $name: sync failed (check the build API token's Workers permissions)"
+    log "$name: FAILED rc=$rc :: $(scrub "$out" "$value")"
   fi
 }
 
-echo "==> Syncing build secrets to Worker runtime"
+log "build-at: $(date -u +%FT%TZ)"
 sync ADMIN_PASSWORD "${ADMIN_PASSWORD:-}"
 sync RESEND_API_KEY "${RESEND_API_KEY:-}"
