@@ -14,6 +14,10 @@
   // Silence the build warnings: be explicit rather than relying on defaults.
   "workers_dev": true,
   "preview_urls": false,
+  // Preserve secrets and vars already on the Worker. Without this, deploy
+  // reconciles bindings against this file and drops anything not declared
+  // here -- including secrets set moments earlier by the build step.
+  "keep_vars": true,
   "vars": {
     "NOTIFY_TO": "Fridaynightrewind06@gmail.com"
   },
