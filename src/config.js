@@ -1,6 +1,6 @@
 export const site = {
   name: 'Friday Night Rewind',
-  tagline: 'Restore the moments. Celebrate the legends.',
+  tagline: 'Restore the moments. Relive the memories.',
   email: 'Fridaynightrewind06@gmail.com',
   phone: '(407) 555-0147',
   hours: 'Business hours coming soon',
